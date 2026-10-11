@@ -101,8 +101,6 @@ class Command(BaseCommand):
                 "amount": Decimal("40000.00"),
             },
         ]
-
-        # Seed each line item
         for item in line_items_data:
             LineItem.objects.update_or_create(
                 organization=item["org"],
