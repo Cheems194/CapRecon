@@ -47,5 +47,4 @@ class TransactionSerializer(serializers.ModelSerializer):
         ]
 
     def get_matches(self, obj):
-        # Return all matches (proposed, approved, rejected)
         return MatchSuggestionSerializer(obj.matches.all(), many=True).data

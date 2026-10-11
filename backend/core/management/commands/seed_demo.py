@@ -10,7 +10,6 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("Seeding demo data...")
 
-        # 1. Organizations
         northwind, _ = Organization.objects.get_or_create(
             slug="northwind",
             defaults={"name": "Northwind Ventures"}
@@ -20,7 +19,6 @@ class Command(BaseCommand):
             defaults={"name": "Bluebird Capital"}
         )
 
-        # 2. Capital Calls
         nw_call1, _ = CapitalCall.objects.get_or_create(
             organization=northwind,
             call_number=1,
@@ -46,9 +44,7 @@ class Command(BaseCommand):
             }
         )
 
-        # 3. Line Items
         line_items_data = [
-            # Northwind Call #1
             {
                 "org": northwind,
                 "call": nw_call1,
@@ -84,7 +80,6 @@ class Command(BaseCommand):
                 "reference": "CC-1005",
                 "amount": Decimal("15000.00"),
             },
-            # Northwind Call #2
             {
                 "org": northwind,
                 "call": nw_call2,
@@ -92,7 +87,6 @@ class Command(BaseCommand):
                 "reference": "CC-1006",
                 "amount": Decimal("15000.00"),
             },
-            # Bluebird Call #1
             {
                 "org": bluebird,
                 "call": bb_call1,
@@ -101,6 +95,7 @@ class Command(BaseCommand):
                 "amount": Decimal("40000.00"),
             },
         ]
+
         for item in line_items_data:
             LineItem.objects.update_or_create(
                 organization=item["org"],

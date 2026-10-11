@@ -4,7 +4,6 @@ from core.models import Organization
 
 
 class TenantScopedAPIView(APIView):
-    #Base view that enforces organization isolation via the X-Organization header
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)

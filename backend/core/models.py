@@ -89,7 +89,6 @@ class Transaction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        # Bank references are unique per organization (two orgs can have the same reference)
         unique_together = ('organization', 'bank_reference')
         ordering = ['-date', '-created_at']
 

@@ -16,17 +16,12 @@ from core.services.reconciliation import approve_match, reject_match, ignore_tra
 
 
 class OrganizationListView(APIView):
-    """Public endpoint to list organizations for the UI tenant switcher."""
     def get(self, request):
         orgs = Organization.objects.all().order_by('name')
         return Response(OrganizationSerializer(orgs, many=True).data)
 
 
 class BankStatementImportView(TenantScopedAPIView):
-    """
-    POST /api/bank-statements/import/
-    Uploads a bank CSV, validates rows, saves records, runs matching engine.
-    """
     def post(self, request):
         csv_file = request.FILES.get('file')
         raw_content = request.data.get('content')
@@ -44,7 +39,6 @@ class BankStatementImportView(TenantScopedAPIView):
         except CSVImportError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Run rule-based matching engine for imported credit transactions
         credits = [
             tx for tx in result["imported_transactions"]
             if tx.transaction_type == Transaction.TYPE_CREDIT
@@ -59,10 +53,6 @@ class BankStatementImportView(TenantScopedAPIView):
 
 
 class TransactionListView(TenantScopedAPIView):
-    """
-    GET /api/transactions/
-    Lists all transactions for the current tenant, newest first, with matches.
-    """
     def get(self, request):
         transactions = Transaction.objects.filter(
             organization=request.tenant
@@ -71,10 +61,6 @@ class TransactionListView(TenantScopedAPIView):
 
 
 class LineItemListView(TenantScopedAPIView):
-    """
-    GET /api/line-items/
-    Lists all capital call line items for the current tenant.
-    """
     def get(self, request):
         items = LineItem.objects.filter(
             organization=request.tenant
@@ -83,12 +69,7 @@ class LineItemListView(TenantScopedAPIView):
 
 
 class ApproveMatchView(TenantScopedAPIView):
-    """
-    POST /api/matches/<int:pk>/approve/
-    Atomically approves a match suggestion, updating line item funding.
-    """
     def post(self, request, pk):
-        # Must return 404 if match doesn't belong to current tenant
         match = get_object_or_404(
             MatchSuggestion.objects.select_related('transaction'),
             id=pk,
@@ -99,10 +80,6 @@ class ApproveMatchView(TenantScopedAPIView):
 
 
 class RejectMatchView(TenantScopedAPIView):
-    """
-    POST /api/matches/<int:pk>/reject/
-    Rejects a match suggestion.
-    """
     def post(self, request, pk):
         match = get_object_or_404(
             MatchSuggestion.objects.select_related('transaction'),
@@ -114,10 +91,6 @@ class RejectMatchView(TenantScopedAPIView):
 
 
 class IgnoreTransactionView(TenantScopedAPIView):
-    """
-    POST /api/transactions/<int:pk>/ignore/
-    Marks a transaction as ignored and rejects its matches.
-    """
     def post(self, request, pk):
         tx_obj = get_object_or_404(Transaction, id=pk, organization=request.tenant)
         tx = ignore_transaction(tx_obj.id, request.tenant)

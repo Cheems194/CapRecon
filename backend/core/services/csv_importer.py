@@ -10,25 +10,15 @@ REQUIRED_COLUMNS = ['date', 'description', 'amount', 'type', 'reference']
 
 
 class CSVImportError(Exception):
-    """Raised when the CSV file as a whole is invalid (e.g., missing columns)."""
     pass
 
 
 def import_bank_statement_csv(organization, csv_file_or_content):
-    """
-    Imports bank statement CSV according to assessment rules:
-    - Rejects whole file if required columns are missing (raises CSVImportError).
-    - Skips and reports row-level errors with line number (header = line 1).
-    - Skips and reports duplicate bank references (database and intra-file).
-    - Debits stored as 'ignored'.
-    - Credits stored and returned for matching.
-    """
     if isinstance(csv_file_or_content, bytes):
         content = csv_file_or_content.decode('utf-8-sig', errors='replace')
     elif isinstance(csv_file_or_content, str):
         content = csv_file_or_content
     else:
-        # UploadedFile
         content = csv_file_or_content.read().decode('utf-8-sig', errors='replace')
 
     reader = csv.reader(io.StringIO(content))
@@ -37,7 +27,6 @@ def import_bank_statement_csv(organization, csv_file_or_content):
     except StopIteration:
         raise CSVImportError("The CSV file is empty.")
 
-    #normalize header names
     headers = [col.strip().lower() for col in header_row]
     header_indices = {}
     for col in REQUIRED_COLUMNS:
@@ -51,11 +40,9 @@ def import_bank_statement_csv(organization, csv_file_or_content):
     seen_references_in_file = set()
 
     for line_number, row in enumerate(reader, start=2):
-        # Skip emppty rows
         if not row or all(c.strip() == '' for c in row):
             continue
 
-        #Check column count
         if len(row) < len(REQUIRED_COLUMNS):
             errors.append({
                 "line": line_number,
@@ -69,7 +56,6 @@ def import_bank_statement_csv(organization, csv_file_or_content):
         raw_type = row[header_indices['type']].strip().lower()
         raw_ref = row[header_indices['reference']].strip()
 
-        #Validate required fields
         if not raw_desc:
             errors.append({"line": line_number, "message": "Description is required."})
             continue
@@ -77,7 +63,6 @@ def import_bank_statement_csv(organization, csv_file_or_content):
             errors.append({"line": line_number, "message": "Reference is required."})
             continue
 
-        #Validate real calendar date
         try:
             parsed_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
         except ValueError:
@@ -87,7 +72,6 @@ def import_bank_statement_csv(organization, csv_file_or_content):
             })
             continue
 
-        #Validate amount (Decimal, never float)
         clean_amount_str = raw_amount.replace(',', '')
         try:
             parsed_amount = Decimal(clean_amount_str)
@@ -102,7 +86,6 @@ def import_bank_statement_csv(organization, csv_file_or_content):
             errors.append({"line": line_number, "message": "Amount cannot be zero."})
             continue
 
-        #Validate type and sign convention
         if raw_type not in ['credit', 'debit']:
             errors.append({
                 "line": line_number,
@@ -124,18 +107,15 @@ def import_bank_statement_csv(organization, csv_file_or_content):
             })
             continue
 
-        #Check duplicate within the same file
         if raw_ref in seen_references_in_file:
             duplicate_count += 1
             continue
         seen_references_in_file.add(raw_ref)
 
-        #Check duplicate in database for this organization
         if Transaction.objects.filter(organization=organization, bank_reference=raw_ref).exists():
             duplicate_count += 1
             continue
 
-        #Create transaction record
         tx_status = (
             Transaction.STATUS_IGNORED if raw_type == 'debit'
             else Transaction.STATUS_NEEDS_REVIEW
