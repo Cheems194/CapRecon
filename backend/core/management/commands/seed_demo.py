@@ -1,13 +1,24 @@
 from decimal import Decimal
 from datetime import date
 from django.core.management.base import BaseCommand
-from core.models import Organization, CapitalCall, LineItem
+from core.models import Organization, CapitalCall, LineItem, Transaction
 
 
 class Command(BaseCommand):
     help = "Seeds initial demo organizations, capital calls, and line items."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--reset',
+            action='store_true',
+            help='Clear all transactions and matches before seeding',
+        )
+
     def handle(self, *args, **options):
+        if options.get('reset'):
+            self.stdout.write("Clearing existing transactions and matches...")
+            Transaction.objects.all().delete()
+
         self.stdout.write("Seeding demo data...")
 
         northwind, _ = Organization.objects.get_or_create(
