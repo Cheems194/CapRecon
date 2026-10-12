@@ -78,6 +78,16 @@ class Transaction(models.Model):
         (STATUS_IGNORED, 'Ignored'),
     ]
 
+    AIRTABLE_NOT_SYNCED = 'not_synced'
+    AIRTABLE_SYNCED = 'synced'
+    AIRTABLE_SYNC_FAILED = 'sync_failed'
+
+    AIRTABLE_CHOICES = [
+        (AIRTABLE_NOT_SYNCED, 'Not Synced'),
+        (AIRTABLE_SYNCED, 'Synced'),
+        (AIRTABLE_SYNC_FAILED, 'Sync Failed'),
+    ]
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='transactions')
     date = models.DateField()
     description = models.CharField(max_length=500)
@@ -86,6 +96,14 @@ class Transaction(models.Model):
     bank_reference = models.CharField(max_length=100)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEEDS_REVIEW)
     review_reason = models.TextField(blank=True, default='')
+
+    airtable_record_id = models.CharField(max_length=100, blank=True, default='')
+    airtable_sync_status = models.CharField(
+        max_length=20,
+        choices=AIRTABLE_CHOICES,
+        default=AIRTABLE_NOT_SYNCED
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

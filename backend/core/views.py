@@ -13,6 +13,7 @@ from core.serializers import (
 from core.services.csv_importer import import_bank_statement_csv, CSVImportError
 from core.services.matching_engine import match_transactions_batch
 from core.services.reconciliation import approve_match, reject_match, ignore_transaction
+from core.services.airtable import sync_needs_review_transactions
 
 
 class OrganizationListView(APIView):
@@ -44,6 +45,7 @@ class BankStatementImportView(TenantScopedAPIView):
             if tx.transaction_type == Transaction.TYPE_CREDIT
         ]
         match_transactions_batch(credits)
+        sync_needs_review_transactions(credits)
 
         return Response({
             "imported_count": result["imported_count"],

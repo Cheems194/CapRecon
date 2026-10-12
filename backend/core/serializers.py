@@ -43,7 +43,8 @@ class TransactionSerializer(serializers.ModelSerializer):
         model = Transaction
         fields = [
             'id', 'date', 'description', 'amount', 'transaction_type',
-            'bank_reference', 'status', 'review_reason', 'matches'
+            'bank_reference', 'status', 'review_reason',
+            'airtable_record_id', 'airtable_sync_status', 'matches'
         ]
 
     def get_matches(self, obj):

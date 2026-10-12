@@ -1,6 +1,8 @@
 import io
+import os
 from decimal import Decimal
 from datetime import date
+from unittest.mock import patch, MagicMock
 from rest_framework.test import APITestCase
 from rest_framework import status
 
@@ -260,3 +262,49 @@ class BankReconciliationTests(APITestCase):
             headers={'X-Organization': 'bluebird'}
         )
         self.assertEqual(res_cross_approve.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch('core.services.airtable.requests.post')
+    def test_airtable_sync_success_updates_record_id(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'id': 'recMock123'}
+        mock_post.return_value = mock_response
+
+        with patch.dict('os.environ', {'AIRTABLE_TOKEN': 'test_token', 'AIRTABLE_BASE_ID': 'appTestBase'}):
+            csv_content = (
+                "date,description,amount,type,reference\n"
+                "2026-04-09,UNKNOWN INCOMING WIRE,9999.99,credit,FT_AIRTABLE_OK\n"
+            )
+            response = self.client.post(
+                '/api/bank-statements/import/',
+                {'content': csv_content},
+                format='json',
+                headers={'X-Organization': 'northwind'}
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            tx = Transaction.objects.get(bank_reference="FT_AIRTABLE_OK")
+            self.assertEqual(tx.status, Transaction.STATUS_NEEDS_REVIEW)
+            self.assertEqual(tx.airtable_record_id, 'recMock123')
+            self.assertEqual(tx.airtable_sync_status, Transaction.AIRTABLE_SYNCED)
+
+    @patch('core.services.airtable.requests.post')
+    def test_airtable_failure_does_not_break_import(self, mock_post):
+        mock_post.side_effect = Exception("Airtable network failure")
+
+        with patch.dict('os.environ', {'AIRTABLE_TOKEN': 'test_token', 'AIRTABLE_BASE_ID': 'appTestBase'}):
+            csv_content = (
+                "date,description,amount,type,reference\n"
+                "2026-04-09,UNKNOWN INCOMING WIRE,9999.99,credit,FT_AIRTABLE_FAIL\n"
+            )
+            response = self.client.post(
+                '/api/bank-statements/import/',
+                {'content': csv_content},
+                format='json',
+                headers={'X-Organization': 'northwind'}
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            tx = Transaction.objects.get(bank_reference="FT_AIRTABLE_FAIL")
+            self.assertEqual(tx.status, Transaction.STATUS_NEEDS_REVIEW)
+            self.assertEqual(tx.airtable_sync_status, Transaction.AIRTABLE_SYNC_FAILED)

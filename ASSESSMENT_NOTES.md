@@ -5,125 +5,139 @@
 
 ---
 
-## 1. Setup Instructions (Fresh Clone)
+## 1. Setup Instructions
 
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+ and npm
-- PostgreSQL running locally or in Docker
+- PostgreSQL (running locally on port 5432)
 
 ### Backend Setup
-1. Open a terminal in the project root and navigate to the backend directory:
+1. Open a terminal and navigate to `backend/`:
    ```bash
    cd backend
    ```
 2. Create and activate a Python virtual environment:
    ```bash
    python -m venv venv
-   # On Windows:
+   # Windows:
    .\venv\Scripts\Activate.ps1
-   # On macOS/Linux:
+   # macOS/Linux:
    source venv/bin/activate
    ```
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-4. Configure database environment variables (copy `.env.example` to `.env` or set environment variables):
+4. Copy the environment variables:
    ```bash
    cp .env.example .env
    ```
-5. Ensure a PostgreSQL database exists (default name: `caprecon`).
-6. Run database migrations:
+   *(Update DB credentials or add Airtable tokens if testing the optional sync).*
+5. Ensure a PostgreSQL database exists (default: `caprecon`).
+6. Run migrations:
    ```bash
    python manage.py migrate
    ```
-7. Seed the initial demo organizations and capital calls:
+7. Seed the demo tenants and capital calls:
    ```bash
    python manage.py seed_demo
    ```
-8. Start the Django API server:
+   *(Pass `--reset` anytime to wipe transactions and re-seed clean demo data).*
+8. Start the Django server:
    ```bash
    python manage.py runserver 8000
    ```
 
 ### Frontend Setup
-1. Open a second terminal and navigate to the frontend directory:
+1. In a second terminal, navigate to `frontend/`:
    ```bash
    cd frontend
    ```
-2. Install npm packages:
+2. Install packages:
    ```bash
    npm install
    ```
-3. Start the Vite development server:
+3. Start the Vite dev server:
    ```bash
    npm run dev
    ```
-4. Open your browser at `http://localhost:5173/`.
+4. Open `http://localhost:5173/` in your browser.
 
 ---
 
-## 2. Command to Run Tests
+## 2. Running Tests
 
-From the `backend` directory (with virtual environment activated):
+Run the test suite from the `backend/` directory:
 
 ```bash
 python manage.py test
 ```
 
-This runs the automated test suite covering all 8 assessment specifications:
-1. Missing column rejects the file and saves nothing.
-2. Amount parsing with thousands separators, sign/type validation, invalid dates, and Decimal type integrity.
-3. Intra-file and re-upload duplicate detection.
-4. Case-insensitive reference matching and partial payments.
-5. Name and amount matching, including multiple candidates handling.
-6. Overpayment detection with no matches.
-7. Atomic approval updating funded balance and returning 409 Conflict on repeated attempts.
-8. Multi-tenant isolation returning 404 for cross-organization queries and approvals.
+There are 10 automated test cases covering:
+- CSV header validation and missing column rejection.
+- Amount parsing with comma separators, sign validation, invalid date checks, and Decimal precision.
+- Intra-file duplicates and repeated file re-uploads.
+- Case-insensitive reference matching (normalizing prefixes like `CC-`) and partial payment handling.
+- Name and amount matching (stripping entity legal forms like `LLC`, `LP` while preserving keywords like `TRUST`).
+- Overpayment detection (preventing over-funding and routing directly to `needs_review`).
+- Atomic approvals and race condition prevention (using `select_for_update` row locks and returning 409 Conflict).
+- Multi-tenant boundary isolation (verifying cross-organization queries and approvals return 404).
+- Airtable sync on import for `needs_review` transactions.
+- Airtable failure isolation (ensuring network timeouts or bad tokens never disrupt CSV ingestion).
 
 ---
 
-## 3. Data Model Summary
+## 3. Architecture & Data Model
 
-- **Organization**: Tenant entity (`name`, `slug`).
-- **CapitalCall**: Call notice scoped to an organization (`call_number`, `call_date`, `due_date`).
-- **LineItem**: An investor's share of a capital call (`investor_name`, `wire_reference`, `amount_called`, `amount_funded`, `status`). Computes dynamic `amount_remaining`.
-- **Transaction**: Bank statement record (`date`, `description`, `amount`, `transaction_type`, `bank_reference`, `status`, `review_reason`). Unique per `(organization, bank_reference)`.
-- **MatchSuggestion**: Link between a transaction and a line item (`transaction`, `line_item`, `status`, `reason`).
+I modeled the domain around multi-tenant capital calls:
+
+- **Organization**: Scopes all data to a specific tenant (`northwind`, `bluebird`). Injected into requests via the `X-Organization` header.
+- **CapitalCall & LineItem**: Tracks call notices and individual investor commitments. The line item computes `amount_remaining` dynamically (`amount_called - amount_funded`).
+- **Transaction**: Ingested bank statement lines. Scoped unique per `(organization, bank_reference)`. Tracks reconciliation status (`suggested`, `needs_review`, `reconciled`, `ignored`), review notes, and Airtable sync state.
+- **MatchSuggestion**: Links transactions to potential line item candidates with a confidence reason string for auditability.
 
 ---
+
 ## 4. API Endpoints
 
-All scoped endpoints require the `X-Organization` header containing the tenant slug (e.g., `northwind`).
+All tenant-scoped endpoints require the `X-Organization` header (`northwind` or `bluebird`).
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/organizations/` | Public list of organizations for UI switcher. |
-| `POST` | `/api/bank-statements/import/` | Upload and validate bank CSV, run matching engine. |
-| `GET` | `/api/transactions/` | List transactions with proposed matches and reasons (newest first). |
-| `GET` | `/api/line-items/` | List capital call line items with funding status and balances. |
-| `POST` | `/api/matches/<id>/approve/` | Atomically approve match, lock records with `select_for_update`, fund line item. |
-| `POST` | `/api/matches/<id>/reject/` | Reject match, transition transaction to `needs_review` if no matches remain. |
-| `POST` | `/api/transactions/<id>/ignore/` | Mark transaction as ignored and reject linked proposed matches. |
+- `GET /api/organizations/` - Fetches the tenant list for the frontend switcher.
+- `POST /api/bank-statements/import/` - Parses CSV, runs matching rules, and triggers Airtable sync for review items.
+- `GET /api/transactions/` - Returns the bank ledger with suggested matches and Airtable sync status.
+- `GET /api/line-items/` - Returns capital call line items with funding balances and progress.
+- `POST /api/matches/<id>/approve/` - Atomically locks records, funds line item, and marks transaction reconciled.
+- `POST /api/matches/<id>/reject/` - Rejects a candidate match; moves transaction to `needs_review` if no matches remain.
+- `POST /api/transactions/<id>/ignore/` - Ignores a transaction and rejects linked match suggestions.
 
 ---
 
-## 5. Assumptions, Trade-offs & Next Steps
+## 5. Optional Bonus: Airtable Integration
 
-### Assumptions
-- Ingestion occurs synchronously during the upload request for files of typical statement size (up to a few thousand rows).
-- Currency amounts are stored in fixed-point `Decimal` with two fractional digits.
-- Line items are not funded beyond their called amounts; overpayments remain in `needs_review`.
+When transactions land in `needs_review` during CSV ingestion, they are automatically sent to Airtable:
+- Created a service (`core/services/airtable.py`) that creates records and updates the transaction with `airtable_record_id` and status (`synced` or `sync_failed`).
+- Handled with a fail-safe try/except block so network latency, rate limits, or missing Airtable credentials will never break or rollback CSV ingestion.
+- The sync helper accepts an optional client parameter, allowing the unit test suite to mock responses cleanly without making outbound HTTP calls.
+- The frontend displays a blue badge with the Airtable record ID for quick reference.
 
-### Trade-offs
-- Concurrency protection relies on PostgreSQL row-level locking (`select_for_update()`) inside atomic transactions. This guarantees double-funding prevention under concurrent requests while maintaining low complexity without external distributed lock managers.
-- Matching calculations are executed once during statement import. Approvals perform real-time verification against the latest remaining balance to catch changes that occurred between import and approval.
+---
 
-### Next Steps
-- Implement batch reconciliation actions for bulk approval of high-confidence suggested matches.
-- Add CSV export of reconciled line items and audit logs for accounting exports.
-- Integrate asynchronous task workers for multi-megabyte statement files.
+## 6. Assumptions & Trade-offs
+
+- **Concurrency & Double-Funding**: I used PostgreSQL's row-level locking (`select_for_update()`) inside `transaction.atomic()`. When an approval request comes in, both the transaction and line item are locked and balances are checked in real-time. If already reconciled or if the payment exceeds remaining balance, it immediately returns an HTTP 409 Conflict. This avoids race conditions cleanly without needing external distributed lock managers.
+- **Synchronous Ingestion**: For bank statements of standard size (a few hundred to a couple thousand rows), processing directly in the upload request keeps the user experience responsive and immediate. For massive files with tens of thousands of rows, I would offload parsing and third-party Airtable calls to a background queue (like Celery).
+- **Tenant Isolation**: Implemented via a reusable `TenantScopedAPIView` base class that validates `X-Organization` and scopes queries to `request.tenant`. Cross-tenant lookups raise standard 404s to prevent tenant data leakage.
+
+---
+
+## 7. Next Steps & Production Polish
+
+If taking this further into production:
+- Batch reconciliation actions for one-click approval of high-confidence suggestions.
+- Asynchronous task processing (Celery/Redis) for large statement uploads and webhook notifications.
+- Dedicated audit log table tracking user actions and timestamps for accounting compliance.
+- Export reconciled statements to CSV and PDF formats for reporting.
 
 ---
 

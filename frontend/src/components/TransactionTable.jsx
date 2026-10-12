@@ -85,9 +85,21 @@ export default function TransactionTable({
                                         </td>
 
                                         <td>
-                                            <span className={`badge badge-${tx.status}`}>
-                                                {tx.status.replace('_', ' ')}
-                                            </span>
+                                            <div>
+                                                <span className={`badge badge-${tx.status}`}>
+                                                    {tx.status.replace('_', ' ')}
+                                                </span>
+                                                {tx.airtable_sync_status === 'synced' && (
+                                                    <div style={{ fontSize: '0.68rem', color: '#60a5fa', marginTop: '0.2rem' }}>
+                                                        Airtable: {tx.airtable_record_id}
+                                                    </div>
+                                                )}
+                                                {tx.airtable_sync_status === 'sync_failed' && (
+                                                    <div style={{ fontSize: '0.68rem', color: '#fb7185', marginTop: '0.2rem' }}>
+                                                        Airtable: Sync failed
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
 
                                         <td>
